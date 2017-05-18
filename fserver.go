@@ -3,13 +3,16 @@ package main
 import (
 	"encoding/json"
 	"fileserver/dao"
+	"fileserver/util"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -23,10 +26,10 @@ var maxUploadMemory int64 = 1024 * 5
 var homedir string = os.Getenv("HOME")
 
 // Folder to store files uploaded
-var fileStorePath string = path.Join("file")
+var fileStorePath string = path.Join(homedir, "file")
 
 // View path
-var viewpath string = path.Join("fileserver-static/view")
+var viewpath string = path.Join(homedir, "fileserver-static/view")
 
 type Todo struct {
 	Name      string
@@ -79,6 +82,7 @@ func get(w http.ResponseWriter, r *http.Request) {
 
 func getUploadPage(w http.ResponseWriter, r *http.Request) {
 	filePath := path.Join(viewpath, "upload.html")
+	fmt.Println("file path: ", filePath)
 	http.ServeFile(w, r, filePath)
 }
 
@@ -91,15 +95,35 @@ func upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
-	newFilePath := path.Join(fileStorePath, header.Filename)
+	diskFile := caculateFilePath(w, file, header)
+	io.Copy(diskFile, file)
+	defer diskFile.Close()
+	fmt.Fprint(w, "File upload succeed!")
+}
+
+func caculateFilePath(w http.ResponseWriter, file multipart.File, header *multipart.FileHeader) *os.File {
+	fileRelativePath := util.GenerateYMDDateStringWithSlash()
+	fileNameHash := util.GenerateMD5HashCode(header.Filename)
+	fmt.Println("file name hash: ", fileNameHash)
+	fileRelativePath += "/" + fileNameHash[0:2] + "/" + string(fileNameHash[2:4])
+	fileRelativePath = path.Join(fileStorePath, fileRelativePath)
+	fmt.Println("file relative path before concat: ", fileRelativePath)
+	err := os.MkdirAll(fileRelativePath, 0777)
+	if err != nil {
+		panic("Making direcitories error.")
+	}
+	fmt.Println("After making directories...")
+	fileRelativePath += "/" + string(fileNameHash[4:len(fileNameHash)])
+	fileNameParts := strings.Split(header.Filename, ".")
+	newFilePath := fileRelativePath + "." + fileNameParts[len(fileNameParts)-1]
+	fmt.Println("new file path: ", newFilePath)
+	// rw-rw-rw- for file created
 	newFile, err := os.OpenFile(newFilePath, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
-		fmt.Fprint(w, "Upload file error => "+err.Error())
-		return
+		fmt.Println("Upload file error => ", err.Error())
+		panic("Upload file error")
 	}
-	defer newFile.Close()
-	io.Copy(newFile, file)
-	fmt.Fprint(w, "File upload succeed!")
+	return newFile
 }
 
 func download(w http.ResponseWriter, r *http.Request) {

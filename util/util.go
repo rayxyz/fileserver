@@ -1,10 +1,13 @@
-package main
+package util
 
 import (
+	"crypto/md5"
 	"database/sql"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"time"
 
 	qrcode "github.com/skip2/go-qrcode"
 )
@@ -30,4 +33,22 @@ func GenerateQRCodeFromDB(w http.ResponseWriter, req *http.Request) {
 		fmt.Println("Error.")
 	}
 	fmt.Println(rows)
+}
+
+func GenerateYMDDateStringWithSlash() string {
+	// dateString := time.Now().Format("2006-01-02")
+	dateString := time.Now().Format("2006/01/02")
+	fmt.Println("date string: ", dateString)
+	return dateString
+}
+
+func GenerateMD5HashCode(data string) string {
+	if data == "" {
+		panic("Generating hash code error.")
+	}
+	h := md5.New()
+	io.WriteString(h, data)
+	hashCode := h.Sum(nil)
+	hashCodeString := fmt.Sprintf("%x", hashCode)
+	return hashCodeString
 }

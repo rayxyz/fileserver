@@ -8,7 +8,7 @@ import (
 )
 
 func getDB() *sql.DB {
-	db, err := sql.Open("mysql", "root:root@/fileserverdb")
+	db, err := sql.Open("mysql", "root:rayxyz123@/fileserverdb")
 	if err != nil {
 		log.Fatal("Generating QR code error.", err)
 	}
