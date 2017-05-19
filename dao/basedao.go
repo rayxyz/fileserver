@@ -79,3 +79,20 @@ func Query(queryString string, params ...interface{}) *list.List {
 
 	return retlist
 }
+
+func Insert(preparingSQL string, params ...interface{}) int64 {
+	stmt, err := getDB().Prepare(preparingSQL) // ? = placeholder
+	if err != nil {
+		panic(err.Error()) // proper error handling instead of panic in your app
+	}
+	defer stmt.Close() // Close the statement when we leave main() / the program terminates
+	result, err := stmt.Exec(params...)
+	if err != nil {
+		panic(err.Error())
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		panic(err.Error())
+	}
+	return id
+}
