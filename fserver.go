@@ -11,15 +11,20 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 )
 
 // The max memory when upload a file
-var maxUploadMemory int64 = 1024 * 5
+var maxUploadMemory int64 = 1024 * 1024 * 1
+
+// The max file size to be permitted.
+var maxFileSize int64 = 1024 * 1024 * 5
 
 // The working directory
 var homedir string = os.Getenv("HOME")
@@ -37,7 +42,7 @@ var staticResourcePath = path.Join(homedir, "fileserver-static")
 var viewpath string = path.Join(homedir, "fileserver-static/view")
 
 type FileModel struct {
-	Id         int64     `json:"id"`
+	Id         string    `json:"id"`
 	Name       string    `json:"name"`
 	Size       int64     `json:"size"`
 	SizeStr    string    `json:"sizeStr"`
@@ -51,7 +56,7 @@ func get(w http.ResponseWriter, r *http.Request) {
 	var filePath string
 	for i := 0; i < retList.Len(); i++ {
 		if i == 0 {
-			filePath = path.Join(retList.Front().Value.(map[string]interface{})["path"].(string))
+			filePath = path.Join(homedir, retList.Front().Value.(map[string]interface{})["path"].(string))
 			log.Println("file path: ", filePath)
 			break
 		}
@@ -76,16 +81,25 @@ func getUploadPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func upload(w http.ResponseWriter, r *http.Request) {
+	// w.Header().Set("Access-Control-Allow-Origin", "*")
+	// w.Header().Set("Access-Control-Allow-Methods", "*")
+	// w.Header().Set("Access-Control-Allow-Headers", "*")
+	// w.Header().Set("Access-Control-Expose-Headers", "*")
+	// w.Header().Set("Access-Control-Allow-Credentials", "true")
 	r.ParseMultipartForm(maxUploadMemory)
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		log.Println("Upload file error.")
+		log.Println("Upload file error => ", err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer file.Close()
 	fileName := header.Filename
 	fileLen := r.ContentLength
+	if maxFileSize < fileLen {
+		http.Error(w, "File size is too large.", http.StatusInternalServerError)
+		return
+	}
 	// rw-rw-rw- for file created
 	filePathWithoutRoot, filePath := generateFilePath(fileName)
 	newFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE, 0644)
@@ -100,7 +114,7 @@ func upload(w http.ResponseWriter, r *http.Request) {
 	fid := save(preparedSQL, fileName, filePathWithoutRoot, fileLen)
 	// BUild file basic info object.
 	fd := FileModel{
-		fid,
+		strconv.FormatInt(fid, 10),
 		fileName,
 		fileLen,
 		util.GetFileSizeInString(fileLen),
@@ -111,6 +125,11 @@ func upload(w http.ResponseWriter, r *http.Request) {
 }
 
 func uploadWithProgress(w http.ResponseWriter, r *http.Request) {
+	fileLen := r.ContentLength
+	if maxFileSize < fileLen {
+		http.Error(w, "File size is too large.", http.StatusInternalServerError)
+		return
+	}
 	mr, err := r.MultipartReader()
 	if err != nil {
 		fmt.Fprint(w, "Upload file error of parse multi part.")
@@ -123,7 +142,6 @@ func uploadWithProgress(w http.ResponseWriter, r *http.Request) {
 	fileName := part.FileName()
 	filePathWithoutRoot, filePath := generateFilePath(fileName)
 	fmt.Println("file path in upload with progress: ", filePath, ", without root: ", filePathWithoutRoot)
-	fileLen := r.ContentLength
 	for {
 		if err == io.EOF {
 			break
@@ -154,7 +172,7 @@ func uploadWithProgress(w http.ResponseWriter, r *http.Request) {
 	fid := save(preparedSQL, fileName, filePathWithoutRoot, fileLen)
 	// BUild file basic info object.
 	fd := FileModel{
-		fid,
+		fmt.Sprintf("%d", fid),
 		fileName,
 		fileLen,
 		util.GetFileSizeInString(fileLen),
@@ -165,6 +183,8 @@ func uploadWithProgress(w http.ResponseWriter, r *http.Request) {
 }
 
 func multiUpload(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "*")
 	err := r.ParseMultipartForm(maxUploadMemory)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -187,12 +207,16 @@ func multiUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		fileLen, _ := io.Copy(newFile, file)
+		if maxFileSize < fileLen {
+			http.Error(w, "File size is too large.", http.StatusInternalServerError)
+			return
+		}
 		preparedSQL := "insert into t_file(id, name, path, size, upload_time) values(uuid_short(), ?, ?, ?, now())"
 		fid := save(preparedSQL, files[key].Filename, filePathWithoutRoot, fileLen)
 		fmt.Println("fid: ", fid)
-		// BUild file basic info object.
+		// Build file basic info object.
 		fd := FileModel{
-			fid,
+			strconv.FormatInt(fid, 10),
 			files[key].Filename,
 			fileLen,
 			util.GetFileSizeInString(fileLen),
@@ -248,7 +272,7 @@ func download(w http.ResponseWriter, r *http.Request) {
 	var fileObj map[string]interface{}
 	if retList.Len() > 0 {
 		fileObj = retList.Front().Value.(map[string]interface{})
-		filePath = path.Join(fileObj["path"].(string))
+		filePath = path.Join(homedir, fileObj["path"].(string))
 		log.Println("file path: ", filePath)
 	} else {
 		fmt.Fprintln(w, "File download error.")
@@ -267,7 +291,7 @@ func download(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	// http.Handle("/getQRCode", http.HandlerFunc(generateQRCode))
+	// http.Handle("/getQRCstring(fid)ode", http.HandlerFunc(generateQRCode))
 	// http.Handle("/file", http.HandlerFunc(getFile))
 
 	router := mux.NewRouter().StrictSlash(true)
@@ -281,7 +305,8 @@ func main() {
 	router.HandleFunc("/uploadWithProgress", uploadWithProgress)
 	router.HandleFunc("/multiUpload", multiUpload)
 	router.HandleFunc("/download/{id}", download)
-	error := http.ListenAndServe(":8090", router)
+	// Handlers.CORS makes cross domain resources sharing possible.
+	error := http.ListenAndServe(":8090", handlers.CORS()(router))
 	if error != nil {
 		panic(error.Error())
 	}
