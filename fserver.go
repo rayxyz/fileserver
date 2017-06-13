@@ -20,26 +20,25 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// The max memory when upload a file
-var maxUploadMemory int64 = 1024 * 1024 * 1
+const (
+	// The max memory when upload a file
+	maxUploadMemory int64 = 1024 * 1024 * 1
+	// The max file size to be permitted.
+	maxFileSize int64 = 1024 * 1024 * 5
+	// The folder to store upload files in homedir.
+	fileSotreDir string = "file"
+)
 
-// The max file size to be permitted.
-var maxFileSize int64 = 1024 * 1024 * 5
-
-// The working directory
-var homedir string = os.Getenv("HOME")
-
-// The folder to store upload files in homedir.
-var fileSotreDir string = "file"
-
-// Folder to store files uploaded
-var fileStorePath string = path.Join(homedir, "file")
-
-// Path of static resources of file server.
-var staticResourcePath = path.Join(homedir, "fileserver-static")
-
-// View path
-var viewpath string = path.Join(homedir, "fileserver-static/view")
+var (
+	// The working directory
+	homedir string = os.Getenv("HOME")
+	// Folder to store files uploaded
+	fileStorePath string = path.Join(homedir, "file")
+	// Path of static resources of file server.
+	staticResourcePath = path.Join(homedir, "fileserver-static")
+	// View path
+	viewpath string = path.Join(homedir, "fileserver-static/view")
+)
 
 type FileModel struct {
 	Id         string    `json:"id"`
